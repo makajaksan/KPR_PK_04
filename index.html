@@ -62,9 +62,15 @@ html[data-theme="dark"] .theme-fab .sw{background:#0e7490}
 html[data-theme="dark"] .theme-fab .sw i{transform:translateX(18px)}
 html[data-theme="dark"]{--bg:#081a25;--panel:#0f2736;--ink:#e6f1f7;--mute:#8fa9ba;--line:#1d3b4f;--brand:#3b9be0;--accent:#12c4d4;--sh:0 10px 30px rgba(0,0,0,.4)}
 
+#waves{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;animation:wvIn 1.6s ease both}
+#home{z-index:1}
+body.in #waves{display:none}
+@keyframes wvIn{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){#waves{animation:none}}
 </style>
 </head>
 <body>
+<canvas id="waves" aria-hidden="true"></canvas>
 <main id="home">
   <button type="button" class="theme-fab" id="homeTheme" aria-label="Переключить тему">
     <span id="homeThemeLabel">Тёмная</span>
@@ -75,7 +81,7 @@ html[data-theme="dark"]{--bg:#081a25;--panel:#0f2736;--ink:#e6f1f7;--mute:#8fa9b
     <button class="card" data-open="kpr"><div class="ic">КПР</div><h2>КПР ПК 0–4</h2><span class="go">Открыть →</span></button>
     <button class="card" data-open="pk"><div class="ic">ПК</div><h2>Производственный контроль</h2><span class="go">Открыть →</span></button>
   </div>
-  <div class="ft ver" style="position:absolute;bottom:14px;right:18px;margin:0;opacity:.7">v0.8.3-beta</div>
+  <div class="ft ver" style="position:absolute;bottom:14px;right:18px;margin:0;opacity:.7">v0.9.0-beta</div>
 </main>
 <div id="app">
   <div id="bar">
@@ -178,6 +184,76 @@ window.addEventListener("hashchange",function(){
 document.getElementById('homeTheme') && document.getElementById('homeTheme').addEventListener('click', function(){
   setTheme(getTheme()==='dark' ? 'light' : 'dark');
 });
+
+/* Анимированные волны на титульной странице */
+(function(){
+  var cv=document.getElementById('waves');if(!cv||!cv.getContext)return;
+  var ctx=cv.getContext('2d'),W=0,H=0,dpr=1,raf=0,t0=performance.now(),C=null;
+  var reduce=false;try{reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+  // ленты: положение по высоте, размах, волновые числа, скорости, ширина веера, цвет (a — акцент, b — основной)
+  var R=[
+    {y:.64,amp:.085,k1:1.7,k2:3.1,s1:.16,s2:-.10,ph:0.0,sp:.20,n:34,c:'a',al:.55},
+    {y:.72,amp:.070,k1:2.3,k2:1.4,s1:-.12,s2:.15,ph:2.1,sp:.24,n:30,c:'b',al:.50},
+    {y:.58,amp:.060,k1:1.2,k2:2.6,s1:.10,s2:.13,ph:4.0,sp:.16,n:26,c:'b',al:.34},
+    {y:.80,amp:.050,k1:2.9,k2:1.8,s1:-.18,s2:-.08,ph:1.0,sp:.14,n:22,c:'a',al:.30}
+  ];
+  function hex(h){h=String(h||'').trim().replace('#','');if(h.length===3)h=h.replace(/./g,'$&$&');var n=parseInt(h,16);return isNaN(n)?[18,196,212]:[(n>>16)&255,(n>>8)&255,n&255]}
+  function colors(){
+    var cs=getComputedStyle(document.documentElement);
+    C={a:hex(cs.getPropertyValue('--accent')),b:hex(cs.getPropertyValue('--brand')),
+       dark:document.documentElement.getAttribute('data-theme')==='dark'};
+  }
+  function size(){
+    dpr=Math.min(window.devicePixelRatio||1,2);W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeight);
+    cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+  }
+  function draw(now){
+    var t=(now-t0)/1000;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.globalCompositeOperation='source-over';
+    ctx.clearRect(0,0,W,H);
+    // мягкое свечение снизу
+    var g=ctx.createRadialGradient(W*.5,H*1.05,0,W*.5,H*1.05,Math.max(W,H)*.75);
+    var a=C.a;g.addColorStop(0,'rgba('+a[0]+','+a[1]+','+a[2]+','+(C.dark?.20:.12)+')');g.addColorStop(1,'rgba('+a[0]+','+a[1]+','+a[2]+',0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation=C.dark?'lighter':'source-over';
+    ctx.lineCap='round';ctx.lineJoin='round';
+    var step=Math.max(6,Math.round(W/160));
+    for(var r=0;r<R.length;r++){
+      var L=R[r],col=C[L.c],base=H*L.y,amp=H*L.amp;
+      for(var i=0;i<L.n;i++){
+        var u=i/(L.n-1),bell=Math.sin(Math.PI*u);
+        var al=L.al*bell*bell*(C.dark?.5:.34);
+        if(al<.01)continue;
+        ctx.beginPath();
+        for(var x=-step;x<=W+step;x+=step){
+          var nx=x/W*Math.PI*2;
+          var y=base+(u-.5)*H*L.sp*.9
+            +amp*Math.sin(nx*L.k1+t*L.s1*2+L.ph+u*1.9)
+            +amp*.55*Math.sin(nx*L.k2+t*L.s2*2+L.ph*1.3+u*2.7);
+          if(x<0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+        }
+        ctx.strokeStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+al.toFixed(3)+')';
+        ctx.lineWidth=C.dark?1.3:1.1;
+        ctx.stroke();
+      }
+    }
+  }
+  function loop(now){draw(now);raf=requestAnimationFrame(loop)}
+  function start(){if(raf||reduce)return;t0=performance.now()-t0*0;raf=requestAnimationFrame(loop)}
+  function stop(){if(raf){cancelAnimationFrame(raf);raf=0}}
+  function sync(){
+    var hidden=document.body.classList.contains('in')||document.hidden;
+    if(hidden)stop();else{colors();if(reduce)draw(performance.now()+4000);else start()}
+  }
+  size();colors();
+  if(reduce)draw(performance.now()+4000);
+  window.addEventListener('resize',function(){size();if(reduce||!raf)draw(performance.now()+4000)});
+  document.addEventListener('visibilitychange',sync);
+  try{new MutationObserver(function(){colors();sync();if(!raf&&!document.body.classList.contains('in'))draw(performance.now())}).observe(document.body,{attributes:true,attributeFilter:['class']});
+      new MutationObserver(function(){colors();if(!raf)draw(performance.now())}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']})}catch(e){}
+  sync();
+})();
 
 var h0=location.hash.replace("#","");if(h0==="kpr"||h0==="pk")openApp(h0);
 </script>
