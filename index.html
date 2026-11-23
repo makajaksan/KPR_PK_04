@@ -66,7 +66,7 @@ html[data-theme="dark"]{--bg:#081a25;--panel:#0f2736;--ink:#e6f1f7;--mute:#8fa9b
 #home{z-index:1}
 body.in #waves{display:none}
 @keyframes wvIn{from{opacity:0}to{opacity:1}}
-@media(prefers-reduced-motion:reduce){#waves{animation:none}}
+@media(prefers-reduced-motion:reduce){#waves{animation-duration:.01s}}
 </style>
 </head>
 <body>
@@ -81,7 +81,7 @@ body.in #waves{display:none}
     <button class="card" data-open="kpr"><div class="ic">КПР</div><h2>КПР ПК 0–4</h2><span class="go">Открыть →</span></button>
     <button class="card" data-open="pk"><div class="ic">ПК</div><h2>Производственный контроль</h2><span class="go">Открыть →</span></button>
   </div>
-  <div class="ft ver" style="position:absolute;bottom:14px;right:18px;margin:0;opacity:.7">v0.9.0-beta</div>
+  <div class="ft ver" style="position:absolute;bottom:14px;right:18px;margin:0;opacity:.7">v0.9.1-beta</div>
 </main>
 <div id="app">
   <div id="bar">
@@ -189,7 +189,8 @@ document.getElementById('homeTheme') && document.getElementById('homeTheme').add
 (function(){
   var cv=document.getElementById('waves');if(!cv||!cv.getContext)return;
   var ctx=cv.getContext('2d'),W=0,H=0,dpr=1,raf=0,t0=performance.now(),C=null;
-  var reduce=false;try{reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+  var soft=false,q=1,frames=0,tStart=0,checked=false;try{soft=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+  var SPEED=soft?.45:1; // при включённом в системе «уменьшении движения» — анимируем, но медленнее
   // ленты: положение по высоте, размах, волновые числа, скорости, ширина веера, цвет (a — акцент, b — основной)
   var R=[
     {y:.64,amp:.085,k1:1.7,k2:3.1,s1:.16,s2:-.10,ph:0.0,sp:.20,n:34,c:'a',al:.55},
@@ -204,11 +205,11 @@ document.getElementById('homeTheme') && document.getElementById('homeTheme').add
        dark:document.documentElement.getAttribute('data-theme')==='dark'};
   }
   function size(){
-    dpr=Math.min(window.devicePixelRatio||1,2);W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeight);
+    dpr=q<1?1:Math.min(window.devicePixelRatio||1,2);W=Math.max(1,window.innerWidth);H=Math.max(1,window.innerHeight);
     cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
   }
   function draw(now){
-    var t=(now-t0)/1000;
+    var t=(now-t0)/1000*SPEED;
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.globalCompositeOperation='source-over';
     ctx.clearRect(0,0,W,H);
@@ -221,8 +222,9 @@ document.getElementById('homeTheme') && document.getElementById('homeTheme').add
     var step=Math.max(6,Math.round(W/160));
     for(var r=0;r<R.length;r++){
       var L=R[r],col=C[L.c],base=H*L.y,amp=H*L.amp;
-      for(var i=0;i<L.n;i++){
-        var u=i/(L.n-1),bell=Math.sin(Math.PI*u);
+      var cnt=Math.max(6,Math.round(L.n*q));
+      for(var i=0;i<cnt;i++){
+        var u=i/(cnt-1),bell=Math.sin(Math.PI*u);
         var al=L.al*bell*bell*(C.dark?.5:.34);
         if(al<.01)continue;
         ctx.beginPath();
@@ -239,16 +241,20 @@ document.getElementById('homeTheme') && document.getElementById('homeTheme').add
       }
     }
   }
-  function loop(now){draw(now);raf=requestAnimationFrame(loop)}
-  function start(){if(raf||reduce)return;t0=performance.now()-t0*0;raf=requestAnimationFrame(loop)}
+  function loop(now){
+    draw(now);
+    // автоподстройка: на слабых компьютерах (удалённый стол, экономия энергии) упрощаем рисунок
+    if(!checked){if(!tStart){tStart=now;frames=0}frames++;
+      if(now-tStart>2000){checked=true;var fps=frames/((now-tStart)/1000);if(fps<28){q=.5;size()}}}
+    raf=requestAnimationFrame(loop)}
+  function start(){if(raf)return;raf=requestAnimationFrame(loop)}
   function stop(){if(raf){cancelAnimationFrame(raf);raf=0}}
   function sync(){
     var hidden=document.body.classList.contains('in')||document.hidden;
-    if(hidden)stop();else{colors();if(reduce)draw(performance.now()+4000);else start()}
+    if(hidden)stop();else{colors();start()}
   }
   size();colors();
-  if(reduce)draw(performance.now()+4000);
-  window.addEventListener('resize',function(){size();if(reduce||!raf)draw(performance.now()+4000)});
+  window.addEventListener('resize',function(){size();if(!raf)draw(performance.now())});
   document.addEventListener('visibilitychange',sync);
   try{new MutationObserver(function(){colors();sync();if(!raf&&!document.body.classList.contains('in'))draw(performance.now())}).observe(document.body,{attributes:true,attributeFilter:['class']});
       new MutationObserver(function(){colors();if(!raf)draw(performance.now())}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']})}catch(e){}
